@@ -18,7 +18,7 @@ const uint16_t RTU_STATION_ADDRESS = 7; // RTU station address
 
 // Polling configuration
 const int POLL_INTERVAL_SECONDS = 5;    // Time between reads
-const int TOTAL_READS = 20;             // Number of reads to perform
+const int TOTAL_READS = 150;            // Number of reads to perform (750 seconds = 12.5 minutes)
 const int CONNECTION_WAIT_SECONDS = 3;  // Wait time for initial connection
 
 // Request configuration
@@ -49,10 +49,16 @@ class SimpleReadHandler : public dnp3::ReadHandler {
 
 // Simple association handler
 class SimpleAssociationHandler : public dnp3::AssociationHandler {
+public:
     dnp3::UtcTimestamp get_current_time() override
     {
         const auto time_since_epoch = std::chrono::system_clock::now().time_since_epoch();
-        return dnp3::UtcTimestamp::valid(std::chrono::duration_cast<std::chrono::milliseconds>(time_since_epoch).count());
+        auto timestamp = dnp3::UtcTimestamp::valid(std::chrono::duration_cast<std::chrono::milliseconds>(time_since_epoch).count());
+        
+        // Debug: Log when time is requested
+        std::cout << "DNP3 time sync requested - providing timestamp: " << timestamp.value << std::endl;
+        
+        return timestamp;
     }
 };
 
@@ -93,13 +99,16 @@ dnp3::MasterChannelConfig get_master_config() {
 }
 
 dnp3::AssociationConfig get_association_config() {
-    // Use the same pattern as the official example
     dnp3::AssociationConfig config(
         dnp3::EventClasses::all(),
         dnp3::EventClasses::all(), 
         dnp3::Classes::all(),
         dnp3::EventClasses::none()
     );
+    
+    // Enable automatic time synchronization if available
+    config.auto_time_sync = dnp3::AutoTimeSync::lan;
+    
     return config;
 }
 
@@ -158,6 +167,18 @@ int main() {
         
         // Wait for connection
         std::this_thread::sleep_for(std::chrono::seconds(CONNECTION_WAIT_SECONDS));
+        
+        // Perform an initial integrity poll (like Kepware would do)
+        std::cout << "\n--- Performing Initial Integrity Poll ---" << std::endl;
+        dnp3::Request integrity_request;
+        integrity_request.add_all_objects_header(dnp3::Variation::group1_var0);  // Binary inputs
+        integrity_request.add_all_objects_header(dnp3::Variation::group30_var0); // Analog inputs
+        integrity_request.add_all_objects_header(dnp3::Variation::group20_var0); // Counters
+        channel.read(assoc, integrity_request, std::make_unique<SimpleReadTaskCallback>());
+        
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        
+        std::this_thread::sleep_for(std::chrono::seconds(2));
         
         // Perform reads at specified interval
         for (int i = 0; i < TOTAL_READS; i++) {
