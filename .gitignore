@@ -1,0 +1,17 @@
+cat > .gitignore << EOF
+# Build artifacts
+rtu_reader
+rtu_reader_test
+*.o
+
+# DNP3 library (downloaded during setup)
+dnp3/
+
+# macOS system files
+.DS_Store
+
+# Editor files
+*.swp
+*.swo
+*~
+EOF
